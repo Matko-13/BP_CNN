@@ -1,0 +1,7 @@
+cpp/
+dist/
+dokumentacia/
+BPvenv/
+database/
+build/
+.vscode/
