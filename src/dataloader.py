@@ -32,6 +32,18 @@ RUGD_CLASSES = [
     {"id": 24, "R": 114, "G": 85, "B": 47}     # picnic_table
 ]
 
+# 24-bit BGR -> class ID; 16 MiB per worker, unknown colours remain class 0.
+COLOR_TO_CLASS = np.zeros(1 << 24, dtype=np.uint8)
+for cls in RUGD_CLASSES:
+    COLOR_TO_CLASS[(cls["B"] << 16) | (cls["G"] << 8) | cls["R"]] = cls["id"]
+
+
+def annotation_to_ids(annotation_bgr):
+    colours = annotation_bgr.astype(np.uint32)
+    keys = (colours[..., 0] << 16) | (colours[..., 1] << 8) | colours[..., 2]
+    return COLOR_TO_CLASS[keys]
+
+
 class RUGDDataset(Dataset):
     def __init__(self, image_dir: str, annotation_dir: str, train_split: float = 0.8, is_train: bool = True, seed: int = 420):
         self.samples = []
@@ -78,20 +90,8 @@ class RUGDDataset(Dataset):
         image = image_uncut[start_y:start_y + self.t_height, start_x:start_x + self.t_width].copy()
         annotation_RGB = annotation_RGB_uncut[start_y:start_y + self.t_height, start_x:start_x + self.t_width].copy()
 
-        # Konverzia RGB anotácie na triedy (ID)
-        annotation = np.zeros((annotation_RGB.shape[0], annotation_RGB.shape[1]), dtype=np.uint8)
-
-        for r in range(annotation_RGB.shape[0]):
-            for c in range(annotation_RGB.shape[1]):
-                bgr = annotation_RGB[r, c]
-                b, g, r_val = bgr[0], bgr[1], bgr[2]
-
-                assigned_id = 0
-                for cls in RUGD_CLASSES:
-                    if cls["B"] == b and cls["G"] == g and cls["R"] == r_val:
-                        assigned_id = cls["id"]
-                        break
-                annotation[r, c] = assigned_id
+        # OpenCV nacitava BGR; vsetky pixely prevedieme naraz cez NumPy.
+        annotation = annotation_to_ids(annotation_RGB)
 
         return {
             "image": image,

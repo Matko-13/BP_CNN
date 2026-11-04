@@ -2,8 +2,8 @@ import os
 from pathlib import Path  
 
 skript_root = Path(__file__).resolve().parent
-root_dir = Path("RUGD_frames-with-annotations")  
-result_dir = skript_root / "RUGD_frames_database"
+root_dir = skript_root / "RUGD_annotations"
+result_dir = skript_root / "RUGD_annotations_database"
 
 result_dir.mkdir(exist_ok=True)
 

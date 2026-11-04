@@ -1,7 +1,10 @@
 cpp/
 dist/
 dokumentacia/
+__pycache__/
 BPvenv/
 database/
-build/
 .vscode/
+
+# Generated model checkpoint
+results/rugd_CNN_v1.pt
