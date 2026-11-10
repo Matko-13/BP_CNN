@@ -9,7 +9,9 @@ import csv
 from datetime import datetime
 from math import ceil
 
-from src.cnn_v1 import CNN_v1
+from src.cnn_v1 import CNN_1
+from src.cnn_v1_2 import CNN_12
+from src.cnn_v1_3 import CNN_13
 from src.dataloader import RUGDDataset
 
 
@@ -23,7 +25,6 @@ def format_duration(seconds):
 
 #collate
 def collate_fn(batch):
-    # Prenasame uint8; normalizacia a prevod typov sa vykonaju na zariadeni.
     images = torch.from_numpy(np.stack([sample["image"] for sample in batch]))
     targets = torch.from_numpy(np.stack([sample["annotation"] for sample in batch]))
     return images.permute(0, 3, 1, 2).contiguous(), targets
@@ -49,35 +50,31 @@ def evaluate_model(model, test_loader, device):
             with torch.autocast(device_type=device.type, enabled=device.type == "cuda"):
                 outputs = model(images)
 
-            # Vyberieme triedu s najvyššou pravdepodobnosťou pre každý pixel
             predictions = torch.argmax(outputs, dim=1)
 
-            # Počet správne klasifikovaných pixelov
             correct_pixels += (predictions == targets).sum().item()
 
-            # Celkový počet pixelov
             total_pixels += targets.numel()
 
+            loss = nn.functional.cross_entropy(outputs, targets)
+            running_loss += loss.item()
+
+    avg_loss = running_loss / len(test_loader) if len(test_loader) > 0 else 0.0
     accuracy = (correct_pixels / total_pixels) * 100 if total_pixels > 0 else 0.0
 
     model.train()
 
-    return accuracy
+    return accuracy, avg_loss  
 
-def main():
+def train(model_version):
     #consts
-    num_epochs = 40
+    num_epochs = 45
     learning_rate = 1e-4
-    batch_size = 8  # Mensi batch znizuje naroky na VRAM.
+    batch_size = 12 
     results_dir = Path("results")
-    csv_dir = results_dir / "Train_log.csv"
     image_dir = "database/RUGD_frames_database"
     annot_dir = "database/RUGD_annotations_database"
-    header = ["Epoch", "Average loss", "Trainning time", "Accuracy"]
-
-    #calculate_accuracy
-    ##def accuracy(img_tensor, annotation):
-
+    header = ["Epoch", "Average loss", "Testing loss", "Trainning time", "Accuracy"]
 
     results_dir.mkdir(exist_ok=True)
 
@@ -119,7 +116,16 @@ def main():
         **loader_options,
     )
 
-    model = CNN_v1(n_channels=3, n_classes=25)
+    if(model_version == 1):
+        model = CNN_1(n_channels=3, n_classes=25)
+        csv_dir = results_dir / "Train_log_v1.csv"
+    elif(model_version == 1.2):
+        model = CNN_12(n_channels=3, n_classes=25)
+        csv_dir = results_dir / "Train_log_v12.csv"
+    elif(model_version == 1.3):
+        model = CNN_13(n_channels=3, n_classes=25)
+        csv_dir = results_dir / "Train_log_v13.csv"
+
     model.to(device)
     model.train()
 
@@ -127,7 +133,6 @@ def main():
     scaler = torch.amp.GradScaler("cuda", enabled=not cpu)
 
     best_acc = 0
-    best_loss = 1
     batches_per_epoch = len(train_loader)
     total_batches = num_epochs * batches_per_epoch
     completed_train_seconds = 0.0
@@ -160,7 +165,6 @@ def main():
                 scaler.step(optimizer)
                 scaler.update()
 
-                # item() pocka na GPU, preto cas kroku zahrna aj jeho vypocet.
                 running_loss += loss.item()
                 step_time = time.perf_counter() - step_start
                 num_batches += 1
@@ -170,7 +174,6 @@ def main():
                 seconds_per_batch = elapsed_train / completed_batches
                 epoch_remaining = (batches_per_epoch - num_batches) * seconds_per_batch
                 remaining = (total_batches - completed_batches) * seconds_per_batch
-                # Po prvej epoche zahrnieme aj priemerny cas validacie a ukladania.
                 if epoch > 1:
                     remaining += (num_epochs - epoch + 1) * epoch_overhead_seconds / (epoch - 1)
                 estimate_scope = "incl. validation" if epoch > 1 else "training only; validation not measured yet"
@@ -196,13 +199,15 @@ def main():
             print(f"Epoch: {epoch} | Average loss: {avg_loss:.4f} | Time: {finish_time:.4f}")
 
             overhead_start = time.perf_counter()
-            acc = evaluate_model(model, test_loader, device)
-            writer.writerow([epoch, avg_loss, finish_time, acc])
+            acc, test_loss = evaluate_model(model, test_loader, device)
 
-            if acc > best_acc and loss < best_loss:
+            if acc > best_acc:
                 torch.save(model.state_dict(), "results/rugd_CNN_v1.pt")
                 best_acc = acc
-                best_loss = loss
+                writer.writerow([epoch, avg_loss, test_loss, finish_time, acc, "Best model saved"])
+            else:
+                writer.writerow([epoch, avg_loss, test_loss, finish_time, acc])
+
             epoch_overhead_seconds += time.perf_counter() - overhead_start
 
     # 6. Uloženie modelu
@@ -212,5 +217,5 @@ def main():
 if __name__ == '__main__':
     import multiprocessing
     multiprocessing.freeze_support()
-    main()
-
+    train(model_version=1.2)
+    train(model_version=1.3)

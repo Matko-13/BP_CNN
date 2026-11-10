@@ -50,9 +50,9 @@ class Up(nn.Module):
         return self.conv(x)
 
 
-class CNN_v1(nn.Module):
+class CNN_1(nn.Module):
     def __init__(self, n_channels: int, n_classes: int):
-        super(CNN_v1, self).__init__()
+        super(CNN_1, self).__init__()
         self.inc = DoubleConv(n_channels, 64)
         self.down1 = Down(64, 128)
         self.down2 = Down(128, 256)

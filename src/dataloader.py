@@ -32,7 +32,6 @@ RUGD_CLASSES = [
     {"id": 24, "R": 114, "G": 85, "B": 47}     # picnic_table
 ]
 
-# 24-bit BGR -> class ID; 16 MiB per worker, unknown colours remain class 0.
 COLOR_TO_CLASS = np.zeros(1 << 24, dtype=np.uint8)
 for cls in RUGD_CLASSES:
     COLOR_TO_CLASS[(cls["B"] << 16) | (cls["G"] << 8) | cls["R"]] = cls["id"]
@@ -81,17 +80,17 @@ class RUGDDataset(Dataset):
         img_path, ann_path = self.samples[index]
 
         image_uncut = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
-        annotation_RGB_uncut = cv2.imread(str(ann_path), cv2.IMREAD_COLOR)
+        annotation_BGR_uncut = cv2.imread(str(ann_path), cv2.IMREAD_COLOR)
 
         # Orezanie na stred (rovnako ako v C++)
         start_x = (image_uncut.shape[1] - self.t_width) // 2
         start_y = (image_uncut.shape[0] - self.t_height) // 2
 
         image = image_uncut[start_y:start_y + self.t_height, start_x:start_x + self.t_width].copy()
-        annotation_RGB = annotation_RGB_uncut[start_y:start_y + self.t_height, start_x:start_x + self.t_width].copy()
+        annotation_BGR = annotation_BGR_uncut[start_y:start_y + self.t_height, start_x:start_x + self.t_width].copy()
 
         # OpenCV nacitava BGR; vsetky pixely prevedieme naraz cez NumPy.
-        annotation = annotation_to_ids(annotation_RGB)
+        annotation = annotation_to_ids(annotation_BGR)
 
         return {
             "image": image,
