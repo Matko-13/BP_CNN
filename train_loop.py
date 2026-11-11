@@ -41,6 +41,7 @@ def evaluate_model(model, test_loader, device):
 
     correct_pixels = 0
     total_pixels = 0
+    running_loss = 0.0
 
     with torch.no_grad():
         for images, targets in test_loader:
@@ -49,6 +50,7 @@ def evaluate_model(model, test_loader, device):
 
             with torch.autocast(device_type=device.type, enabled=device.type == "cuda"):
                 outputs = model(images)
+                loss = nn.functional.cross_entropy(outputs, targets)
 
             predictions = torch.argmax(outputs, dim=1)
 
@@ -56,7 +58,6 @@ def evaluate_model(model, test_loader, device):
 
             total_pixels += targets.numel()
 
-            loss = nn.functional.cross_entropy(outputs, targets)
             running_loss += loss.item()
 
     avg_loss = running_loss / len(test_loader) if len(test_loader) > 0 else 0.0
@@ -70,7 +71,7 @@ def train(model_version):
     #consts
     num_epochs = 45
     learning_rate = 1e-4
-    batch_size = 12 
+    batch_size = 8 
     results_dir = Path("results")
     image_dir = "database/RUGD_frames_database"
     annot_dir = "database/RUGD_annotations_database"
@@ -119,10 +120,10 @@ def train(model_version):
     if(model_version == 1):
         model = CNN_1(n_channels=3, n_classes=25)
         csv_dir = results_dir / "Train_log_v1.csv"
-    elif(model_version == 1.2):
+    elif(model_version == 12):
         model = CNN_12(n_channels=3, n_classes=25)
         csv_dir = results_dir / "Train_log_v12.csv"
-    elif(model_version == 1.3):
+    elif(model_version == 13):
         model = CNN_13(n_channels=3, n_classes=25)
         csv_dir = results_dir / "Train_log_v13.csv"
 
@@ -132,7 +133,7 @@ def train(model_version):
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     scaler = torch.amp.GradScaler("cuda", enabled=not cpu)
 
-    best_acc = 0
+    best_loss = float("inf")
     batches_per_epoch = len(train_loader)
     total_batches = num_epochs * batches_per_epoch
     completed_train_seconds = 0.0
@@ -201,12 +202,14 @@ def train(model_version):
             overhead_start = time.perf_counter()
             acc, test_loss = evaluate_model(model, test_loader, device)
 
-            if acc > best_acc:
-                torch.save(model.state_dict(), "results/rugd_CNN_v1.pt")
-                best_acc = acc
+            if test_loss < best_loss:
+                torch.save(model.state_dict(), f"results/rugd_CNN_v{model_version}.pt")
+                best_loss = test_loss
                 writer.writerow([epoch, avg_loss, test_loss, finish_time, acc, "Best model saved"])
             else:
                 writer.writerow([epoch, avg_loss, test_loss, finish_time, acc])
+
+            subor.flush()
 
             epoch_overhead_seconds += time.perf_counter() - overhead_start
 
@@ -217,5 +220,6 @@ def train(model_version):
 if __name__ == '__main__':
     import multiprocessing
     multiprocessing.freeze_support()
-    train(model_version=1.2)
-    train(model_version=1.3)
+    #train(model_version=12)
+    train(model_version=13)
+    #train(model_version=1)

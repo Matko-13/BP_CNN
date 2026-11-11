@@ -64,7 +64,7 @@ class CNN_13(nn.Module):
         self.up3 = Up(128, 64)
         self.up4 = Up(64, 32)
 
-        self.outc = nn.Conv2d(64, n_classes, kernel_size=1)
+        self.outc = nn.Conv2d(32, n_classes, kernel_size=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x1 = self.inc(x)

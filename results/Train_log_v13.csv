@@ -1,0 +1,2 @@
+Epoch,Average loss,Testing loss,Trainning time,Accuracy
+1,1.7691621850094488,1.0902259814482864,142.80377289999998,80.81428495623446,Best model saved
