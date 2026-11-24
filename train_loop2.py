@@ -5,12 +5,14 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+
 from src.fast_scnn import FSCN
+from src.cnn_v1 import CNN_1
+
 
 from src.dataloader import RUGDDataset
 
@@ -71,7 +73,7 @@ def evaluate(model, loader, device):
         "f1": f1.nanmean().item() * 100,
     }
 
-def train():
+def train(mod):
     num_epochs = 45
     lr = 1e-3
     batch_size = 8
@@ -90,14 +92,19 @@ def train():
                               collate_fn=make_collate_fn(True),
                               num_workers=workers, persistent_workers=workers > 0)
     test_loader = DataLoader(test_set, batch_size, shuffle=False,
-                             collate_fn=make_collate_fn(False),
+                             collate_fn=make_collate_fn(True),
                              num_workers=workers, persistent_workers=workers > 0)
 
-    model = FSCN(N_CLASSES).to(device)
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    if mod == 1:
+        model = CNN_1(N_CLASSES).to(device)
+        Path("results/UNET").mkdir(parents=True, exist_ok=True)
+        writer = SummaryWriter(f"results/UNET/data{datetime.now():%Y%m%d_%H%M%S}")
+    if mod == 4:
+            model = FSCN(N_CLASSES).to(device)
+            Path("results/FSCN").mkdir(parents=True, exist_ok=True)
+            writer = SummaryWriter(f"results/FSCN/data{datetime.now():%Y%m%d_%H%M%S}")
 
-    Path("results").mkdir(exist_ok=True)
-    writer = SummaryWriter(f"results/fscn_{datetime.now():%Y%m%d_%H%M%S}")
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     best_miou = -1.0
 
     for epoch in range(1, num_epochs + 1):
@@ -129,11 +136,19 @@ def train():
 
         if m["miou"] > best_miou:
             best_miou = m["miou"]
-            torch.save(model.state_dict(), f"results/rugd_fscn_best{epoch}.pt")
+            if mod == 1:
+                torch.save(model.state_dict(), f"results/UNET/best_model.pt")
+            if mod == 4:
+                torch.save(model.state_dict(), f"results/FSCN/best_model.pt")
 
-    torch.save(model.state_dict(), "results/rugd_fscn_last.pt")
+    if mod == 1:
+        torch.save(model.state_dict(), f"results/UNET/last_model.pt")
+    if mod == 4:
+        torch.save(model.state_dict(), f"results/FSCN/last_model.pt")
+
     writer.close()
 
 
 if __name__ == "__main__":
-    train()
+    train(1)
+    train(4)
