@@ -1,13 +1,11 @@
-from pathlib import Path
-import random
 import numpy as np
-import cv2
 import torch
-import torch.nn as nn
 import numpy as np
 import time
 
-from src.cnn_v1 import CNN_v1
+from src.cnn_v1 import CNN_1
+from src.cnn_v1_2 import CNN_12
+from src.cnn_v1_3 import CNN_13
 from src.dataloader import RUGDDataset
 
 RUGD_CLASSES = [
@@ -38,12 +36,27 @@ RUGD_CLASSES = [
     {"id": 24, "R": 114, "G": 85, "B": 47}     # picnic_table
 ]
 
+CLASS_NAMES = [
+    "void", "dirt", "sand", "grass", "tree", "pole", "water", "sky",
+    "vehicle", "container", "asphalt", "gravel", "building", "mulch",
+    "rock_bed", "log", "bicycle", "person", "fence", "bush", "sign",
+    "rock", "bridge", "concrete", "picnic_table",
+]
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using {'CUDA' if device.type == 'cuda' else 'CPU'}")
 
-my_model = CNN_v1(n_channels=3, n_classes=25)
-my_model.load_state_dict(torch.load('results/rugd_CNN_v1.pt', map_location=device))
-my_model.eval()
+my_model1 = CNN_1(n_channels=3, n_classes=25)
+my_model1.load_state_dict(torch.load('results/rugd_CNN_v1.pt', map_location=device))
+my_model1.eval()
+
+my_model2 = CNN_12(n_channels=3, n_classes=25)
+my_model2.load_state_dict(torch.load('results/rugd_CNN_v12.pt', map_location=device))
+my_model2.eval()
+
+my_model3 = CNN_13(n_channels=3, n_classes=25)
+my_model3.load_state_dict(torch.load('results/rugd_CNN_v13.pt', map_location=device))
+my_model3.eval()
 
 image_dir = "database/RUGD_frames_database"
 annot_dir = "database/RUGD_annotations_database"
@@ -54,6 +67,17 @@ CLASS_TO_COLOR = np.zeros((len(RUGD_CLASSES), 3), dtype=np.uint8)
 for cls in RUGD_CLASSES:
     CLASS_TO_COLOR[cls["id"]] = [cls["R"], cls["G"], cls["B"]]
 
+RGB_TO_CLASS = {
+    (cls["R"], cls["G"], cls["B"]): cls["id"] for cls in RUGD_CLASSES
+}
+
+def rgb_to_class(r, g, b):
+    class_id = RGB_TO_CLASS.get((int(r), int(g), int(b)))
+    if class_id is None:
+        return None, None
+    return CLASS_NAMES[class_id]
+
+
 def prepare_single_image(img_np, device):
     tensor_img = torch.from_numpy(img_np.copy())
     tensor_img = tensor_img.permute(2, 0, 1).contiguous()
@@ -63,32 +87,46 @@ def prepare_single_image(img_np, device):
     return tensor_img
 
 
-def make_set(id):
+def make_set(id, model_num, full = False):
     sample = dataset[id]
     
     img = sample["image"]
     annot = sample["annotation"]
-
-    start_time = time.time()
     
     tensor_img = prepare_single_image(img, device)
 
-    my_model.eval()
+    if model_num == 1:
+        model = my_model1
+    elif model_num == 2:
+        model = my_model2
+    elif model_num == 3:
+        model = my_model3
+
+    model.eval()
+
+    model.to(device)
+
+    start_time = time.time()
 
     with torch.no_grad():
-        output = my_model(tensor_img)
+        output = model(tensor_img)
 
     predictions = torch.argmax(output, dim=1).squeeze(0).cpu().numpy()
+
+    duration = float(time.time() - start_time)
 
     color_mask = CLASS_TO_COLOR[predictions]
     annot_color = CLASS_TO_COLOR[annot]
 
-    duration = float(time.time() - start_time)
-
-    return color_mask, img, annot_color, duration
+    if full:
+        return color_mask, img, annot_color, duration
+    return color_mask, duration
 
 def evaluate_images(annotation, prediction):
     correct_pixels = np.all(annotation == prediction, axis=-1).sum()
     total_pixels = annotation.shape[0] * annotation.shape[1]
     accuracy = (correct_pixels / total_pixels) * 100 if total_pixels > 0 else 0.0
     return accuracy
+
+def dataset_len():
+    return len(dataset)

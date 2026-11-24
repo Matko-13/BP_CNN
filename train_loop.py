@@ -8,12 +8,27 @@ from pathlib import Path
 import csv
 from datetime import datetime
 from math import ceil
+import random
 
 from src.cnn_v1 import CNN_1
 from src.cnn_v1_2 import CNN_12
 from src.cnn_v1_3 import CNN_13
 from src.dataloader import RUGDDataset
 
+
+def random_crop(img, ann, size=512):
+    h, w = ann.shape[:2]
+
+    top = random.randint(0, h - size)
+    left = random.randint(0, w - size)
+    return (img[top:top + size, left:left + size],
+            ann[top:top + size, left:left + size])
+
+
+def augment_sample(img, ann):
+    if np.random.rand() < 0.5:
+        img, ann = img[:, ::-1], ann[:, ::-1]
+    return img, ann
 
 def format_duration(seconds):
     minutes, seconds = divmod(max(0, ceil(seconds)), 60)
@@ -22,13 +37,21 @@ def format_duration(seconds):
     clock = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
     return f"{days}d {clock}" if days else clock
 
+def make_collate_fn(augment=False):
+    def collate(batch):
+        images, targets = [], []
+        for sample in batch:
+            img, ann = sample["image"], sample["annotation"]
+            if augment:
+                img, ann = augment_sample(img, ann)
+                img, ann = random_crop(img, ann)
+            images.append(img)
+            targets.append(ann)
 
-#collate
-def collate_fn(batch):
-    images = torch.from_numpy(np.stack([sample["image"] for sample in batch]))
-    targets = torch.from_numpy(np.stack([sample["annotation"] for sample in batch]))
-    return images.permute(0, 3, 1, 2).contiguous(), targets
-
+        images = torch.from_numpy(np.stack(images))
+        targets = torch.from_numpy(np.stack(targets))
+        return images.permute(0, 3, 1, 2).contiguous(), targets
+    return collate
 
 def prepare_batch(images, targets, device):
     images = images.to(device, dtype=torch.float32, non_blocking=True).div_(255.0)
@@ -101,12 +124,12 @@ def train(model_version):
         num_workers=0 if cpu else 4,
         pin_memory=not cpu,
         persistent_workers=not cpu,
-        collate_fn=collate_fn,
     )
     train_loader = TorchDataLoader(
         dataset=train_dataset,
         batch_size=batch_size,
         shuffle=False,
+        collate_fn=make_collate_fn(augment=True),
         **loader_options,
     )
 
@@ -114,6 +137,7 @@ def train(model_version):
         dataset=test_dataset,
         batch_size=batch_size,
         shuffle=False,
+        collate_fn=make_collate_fn(augment=False),
         **loader_options,
     )
 
@@ -220,6 +244,6 @@ def train(model_version):
 if __name__ == '__main__':
     import multiprocessing
     multiprocessing.freeze_support()
-    #train(model_version=12)
+    train(model_version=12)
     train(model_version=13)
-    #train(model_version=1)
+    train(model_version=1)
